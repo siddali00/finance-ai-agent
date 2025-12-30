@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pandas
+openpyxl
+xlrd==2.0.1
+google-generativeai
+plotly
+Pydantic
+python-dotenv
+sqlalchemy
+psycopg2-binary
+alembic
+
