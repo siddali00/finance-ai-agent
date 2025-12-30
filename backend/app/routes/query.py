@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api", tags=["query"])
 @router.post("/query", response_model=QueryResponse)
 async def query_data(request: QueryRequest, db: Session = Depends(get_db)):
     """
-    Answer a natural language question about the uploaded data
+    Answer a natural language question - handles greetings, data queries, and out-of-scope questions
     If session_id is not provided or invalid, a new session will be created
     """
     # Get or create session
@@ -23,11 +23,16 @@ async def query_data(request: QueryRequest, db: Session = Depends(get_db)):
     # Get session data
     try:
         session = db_session_manager.get_session(db, session_id)
+        has_data = bool(session.dataframes)
+        schema_info = session.schema_info if has_data else {}
     except ValueError:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found. Please upload files first."
+        )
     
-    # Check if data is uploaded
-    if not session.dataframes:
+    # Require files to be uploaded before any conversation
+    if not has_data:
         raise HTTPException(
             status_code=400,
             detail="No data uploaded for this session. Please upload an Excel file first."
@@ -42,85 +47,160 @@ async def query_data(request: QueryRequest, db: Session = Depends(get_db)):
                 detail="Gemini API key not configured. Please set GEMINI_API_KEY environment variable."
             )
         
-        # Generate code to answer the question
-        code = gemini_service.generate_query_code(
+        # Classify the query using AI
+        query_type = gemini_service.classify_query(
             question=request.question,
-            schema_info=session.schema_info
+            has_data=has_data,
+            schema_info=schema_info if has_data else None
         )
         
-        # Execute the code safely
-        safe_globals = {
-            'pd': __import__('pandas'),
-            'dataframes': session.dataframes,
-            '__builtins__': {
-                'len': len,
-                'str': str,
-                'int': int,
-                'float': float,
-                'list': list,
-                'dict': dict,
-                'range': range,
-                'enumerate': enumerate,
-                'zip': zip,
-                'min': min,
-                'max': max,
-                'sum': sum,
-                'abs': abs,
-                'round': round,
-                '__import__': __import__,
+        # Handle different query types
+        if query_type == 'greeting' or query_type == 'conversational':
+            # Handle greetings and conversational queries
+            answer = gemini_service.handle_conversational_query(
+                question=request.question,
+                has_data=has_data,
+                schema_info=schema_info if has_data else None
+            )
+            
+            # Save conversation
+            db_session_manager.save_conversation(
+                db=db,
+                session_id=session_id,
+                question=request.question,
+                answer=answer,
+                query_used=None
+            )
+            
+            return QueryResponse(
+                session_id=session_id,
+                answer=answer,
+                query_used=None,
+                data=None
+            )
+        
+        elif query_type == 'out_of_scope':
+            # Politely decline
+            answer = gemini_service.handle_out_of_scope_query(request.question)
+            
+            # Save conversation
+            db_session_manager.save_conversation(
+                db=db,
+                session_id=session_id,
+                question=request.question,
+                answer=answer,
+                query_used=None
+            )
+            
+            return QueryResponse(
+                session_id=session_id,
+                answer=answer,
+                query_used=None,
+                data=None
+            )
+        
+        elif query_type == 'data_query':
+            # Process data query (data is guaranteed to exist due to check above)
+            # Generate code to answer the question
+            code = gemini_service.generate_query_code(
+                question=request.question,
+                schema_info=schema_info
+            )
+            
+            # Execute the code safely
+            safe_globals = {
+                'pd': __import__('pandas'),
+                'dataframes': session.dataframes,
+                '__builtins__': {
+                    'len': len,
+                    'str': str,
+                    'int': int,
+                    'float': float,
+                    'list': list,
+                    'dict': dict,
+                    'range': range,
+                    'enumerate': enumerate,
+                    'zip': zip,
+                    'min': min,
+                    'max': max,
+                    'sum': sum,
+                    'abs': abs,
+                    'round': round,
+                    '__import__': __import__,
+                }
             }
-        }
+            
+            exec(code, safe_globals)
+            
+            # Get result
+            if 'result' in safe_globals:
+                result = safe_globals['result']
+            else:
+                result = None
+            
+            # Convert result to serializable format
+            result_data: Optional[Any] = None
+            if result is not None:
+                try:
+                    if isinstance(result, pd.DataFrame):
+                        result_data = result.to_dict('records')
+                    elif isinstance(result, pd.Series):
+                        result_data = result.tolist()
+                    elif isinstance(result, (np.integer, np.floating, np.bool_)):
+                        result_data = result.item()
+                    elif isinstance(result, (int, float, str, bool, type(None))):
+                        result_data = result
+                    elif isinstance(result, (list, dict)):
+                        result_data = result
+                    else:
+                        result_data = str(result)
+                except Exception as e:
+                    result_data = str(result)
+            
+            # Generate natural language answer
+            answer = gemini_service.generate_answer_from_result(
+                question=request.question,
+                result=result
+            )
+            
+            # Save conversation (code is saved but not shown to user)
+            db_session_manager.save_conversation(
+                db=db,
+                session_id=session_id,
+                question=request.question,
+                answer=answer,
+                query_used=code
+            )
+            
+            return QueryResponse(
+                session_id=session_id,
+                answer=answer,
+                query_used=None,  # Don't send code to frontend
+                data=result_data
+            )
         
-        exec(code, safe_globals)
-        
-        # Get result
-        if 'result' in safe_globals:
-            result = safe_globals['result']
         else:
-            # Try to get the last expression result
-            result = None
-        
-        # Convert result to serializable format
-        result_data: Optional[Any] = None
-        if result is not None:
-            try:
-                if isinstance(result, pd.DataFrame):
-                    result_data = result.to_dict('records')
-                elif isinstance(result, pd.Series):
-                    result_data = result.tolist()
-                elif isinstance(result, (np.integer, np.floating, np.bool_)):
-                    result_data = result.item()  # Convert numpy types to Python native types
-                elif isinstance(result, (int, float, str, bool, type(None))):
-                    result_data = result
-                elif isinstance(result, (list, dict)):
-                    result_data = result
-                else:
-                    result_data = str(result)  # Fallback to string representation
-            except Exception as e:
-                # If conversion fails, use string representation
-                result_data = str(result)
-        
-        # Generate natural language answer
-        answer = gemini_service.generate_answer_from_result(
-            question=request.question,
-            result=result
-        )
-        
-        # Save conversation to database
-        db_session_manager.save_conversation(
-            db=db,
-            session_id=session_id,
-            question=request.question,
-            answer=answer,
-            query_used=code
-        )
-        
-        return QueryResponse(
-            session_id=session_id,
-            answer=answer,
-            query_used=code,
-            data=result_data
-        )
+            # Fallback to conversational
+            answer = gemini_service.handle_conversational_query(
+                question=request.question,
+                has_data=has_data,
+                schema_info=schema_info if has_data else None
+            )
+            
+            db_session_manager.save_conversation(
+                db=db,
+                session_id=session_id,
+                question=request.question,
+                answer=answer,
+                query_used=None
+            )
+            
+            return QueryResponse(
+                session_id=session_id,
+                answer=answer,
+                query_used=None,
+                data=None
+            )
     
     except Exception as e:
         raise HTTPException(

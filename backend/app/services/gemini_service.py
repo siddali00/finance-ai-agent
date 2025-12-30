@@ -148,15 +148,104 @@ Return ONLY the Python code, no explanations or markdown formatting. The code sh
         except Exception as e:
             raise Exception(f"Error generating chart code with Gemini: {str(e)}")
     
+    def classify_query(
+        self,
+        question: str,
+        has_data: bool = False,
+        schema_info: Optional[Dict[str, Dict[str, Any]]] = None
+    ) -> str:
+        """
+        Classify the query type using AI.
+        Returns: 'greeting', 'data_query', 'visualization', 'out_of_scope', or 'conversational'
+        """
+        data_context = ""
+        if has_data and schema_info:
+            sheet_names = list(schema_info.keys())
+            data_context = f"\n\nAvailable data: {len(sheet_names)} sheet(s) - {', '.join(sheet_names[:5])}"
+        
+        prompt = f"""You are a helpful AI assistant for a financial data analysis tool. Classify the user's message into one of these categories:
+
+1. "greeting" - Greetings, salutations, small talk (hi, hello, how are you, thanks, etc.)
+2. "data_query" - Questions about the data that require analysis (what, which, how much, show me data, etc.)
+3. "visualization" - Requests for charts, graphs, plots, visualizations
+4. "out_of_scope" - Questions unrelated to data analysis (weather, general knowledge, etc.)
+5. "conversational" - General conversation that's not a greeting but also not a data query
+
+User message: "{question}"
+{data_context}
+
+Respond with ONLY one word: greeting, data_query, visualization, out_of_scope, or conversational
+"""
+        
+        try:
+            response = self.model.generate_content(prompt)
+            classification = response.text.strip().lower()
+            # Extract just the classification word
+            for cat in ['greeting', 'data_query', 'visualization', 'out_of_scope', 'conversational']:
+                if cat in classification:
+                    return cat
+            return 'conversational'  # Default
+        except Exception as e:
+            # Default to data_query if classification fails
+            return 'data_query'
+    
+    def handle_conversational_query(
+        self,
+        question: str,
+        has_data: bool = False,
+        schema_info: Optional[Dict[str, Dict[str, Any]]] = None
+    ) -> str:
+        """
+        Handle greetings, small talk, and conversational queries using AI.
+        Returns a friendly, conversational response.
+        """
+        prompt = f"""You are a friendly, helpful AI assistant for a financial data analysis tool. The user has sent you a message.
+
+User message: "{question}"
+
+Respond in a warm, friendly, and conversational manner. Be helpful and engaging. 
+
+Important guidelines:
+- If it's a greeting (hi, hello, how are you, etc.), respond naturally without mentioning specific data or files
+- Keep responses concise (2-3 sentences max) and natural
+- Don't reveal specific details about uploaded files unless the user explicitly asks about them
+- Be friendly and conversational, like talking to a colleague
+- Don't mention technical details like "pandas", "dataframes", or code
+
+Just be friendly and helpful without over-sharing information.
+"""
+        
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            # Fallback responses
+            if any(word in question.lower() for word in ['hi', 'hello', 'hey']):
+                return "Hello! I'm here to help you analyze your financial data. How can I assist you today?"
+            return "I'm here to help you with your data analysis. What would you like to know?"
+    
+    def handle_out_of_scope_query(self, question: str) -> str:
+        """Politely decline out-of-scope queries"""
+        prompt = f"""You are a helpful AI assistant for a financial data analysis tool. The user asked: "{question}"
+
+This question is outside the scope of data analysis. Politely decline and redirect them back to data analysis capabilities. Be friendly and brief (1-2 sentences).
+"""
+        
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            return "I'm focused on helping you analyze your financial data. Could you ask me something about your uploaded data instead?"
+    
     def generate_answer_from_result(self, question: str, result: Any) -> str:
         """Generate a natural language answer from the query result"""
         result_str = str(result)
         
-        prompt = f"""User asked: {question}
+        prompt = f"""You are a friendly, helpful AI assistant. The user asked: "{question}"
 
 The data analysis returned: {result_str}
 
-Provide a clear, concise answer to the user's question based on this result. Be conversational and helpful.
+Provide a clear, conversational answer to the user's question based on this result. Be friendly, concise, and helpful. Don't mention technical details like code or dataframes - just give a natural answer.
 """
         
         try:
@@ -164,5 +253,5 @@ Provide a clear, concise answer to the user's question based on this result. Be 
             return response.text.strip()
         except Exception as e:
             # Fallback to simple formatting
-            return f"Based on the data: {result_str}"
+            return f"Based on your data: {result_str}"
 

@@ -26,12 +26,6 @@ const ChatMessage = ({ message, isUser }) => {
         {message.type === 'text' && (
           <div>
             <p className="answer-text">{message.text}</p>
-            {message.queryUsed && (
-              <details className="code-details">
-                <summary>View generated code</summary>
-                <pre><code>{message.queryUsed}</code></pre>
-              </details>
-            )}
           </div>
         )}
         

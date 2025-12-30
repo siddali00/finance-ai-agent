@@ -105,7 +105,6 @@ const ChatWindow = () => {
           id: Date.now(),
           type: 'text',
           text: response.answer,
-          queryUsed: response.query_used,
           data: response.data,
           isUser: false,
         };
