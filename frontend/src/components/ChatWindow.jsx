@@ -105,7 +105,6 @@ const ChatWindow = () => {
           id: Date.now(),
           type: 'text',
           text: response.answer,
-          data: response.data,
           isUser: false,
         };
         setMessages(prev => [...prev, aiMessage]);

@@ -3,10 +3,6 @@ from app.models.schemas import QueryRequest, QueryResponse
 from app.services.shared import db_session_manager, get_gemini_service
 from app.database import get_db
 from sqlalchemy.orm import Session
-import os
-import pandas as pd
-import numpy as np
-from typing import Any, Optional
 
 router = APIRouter(prefix="/api", tags=["query"])
 
@@ -138,25 +134,6 @@ async def query_data(request: QueryRequest, db: Session = Depends(get_db)):
             else:
                 result = None
             
-            # Convert result to serializable format
-            result_data: Optional[Any] = None
-            if result is not None:
-                try:
-                    if isinstance(result, pd.DataFrame):
-                        result_data = result.to_dict('records')
-                    elif isinstance(result, pd.Series):
-                        result_data = result.tolist()
-                    elif isinstance(result, (np.integer, np.floating, np.bool_)):
-                        result_data = result.item()
-                    elif isinstance(result, (int, float, str, bool, type(None))):
-                        result_data = result
-                    elif isinstance(result, (list, dict)):
-                        result_data = result
-                    else:
-                        result_data = str(result)
-                except Exception as e:
-                    result_data = str(result)
-            
             # Generate natural language answer
             answer = gemini_service.generate_answer_from_result(
                 question=request.question,
@@ -176,7 +153,7 @@ async def query_data(request: QueryRequest, db: Session = Depends(get_db)):
                 session_id=session_id,
                 answer=answer,
                 query_used=None,  # Don't send code to frontend
-                data=result_data
+                data=None  # Data not used by frontend, only AI answer is displayed
             )
         
         else:

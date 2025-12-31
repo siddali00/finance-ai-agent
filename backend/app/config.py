@@ -16,10 +16,7 @@ class Config:
     
     # File upload settings
     MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # Default 10MB
-    
-    # Session settings
-    SESSION_TIMEOUT_HOURS = int(os.getenv("SESSION_TIMEOUT_HOURS", 24))
-    
+        
     # Server settings
     HOST = os.getenv("HOST")
     PORT = int(os.getenv("PORT"))
