@@ -32,6 +32,11 @@ uploads/
 *.xlsx
 *.xls
 
+# Exception: Allow test_data directory
+!test_data/
+!test_data/**/*.xlsx
+!test_data/**/*.xls
+
 # OS
 .DS_Store
 Thumbs.db

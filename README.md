@@ -79,6 +79,17 @@ A natural language interface for analyzing Excel data using AI. Upload your Exce
    
    App available at `http://localhost:5173`
 
+## Test Data
+
+Sample test data files are available in `backend/test_data/` directory for testing the application:
+
+- `branch_performance.xlsx` - Branch sales, employees, and summary data (3 sheets)
+- `financial_data.xlsx` - Revenue, expenses, and profit data by month (3 sheets)
+- `product_analysis.xlsx` - Product sales, details, and monthly summaries (3 sheets)
+- `sales_data_by_quarter.xlsx` - Quarterly sales data (Q1-Q4) with summary (5 sheets)
+
+You can upload these files to test the system. For sample queries to try with this test data, see [SAMPLE_QUERIES.md](SAMPLE_QUERIES.md).
+
 ## Architecture Overview
 
 ### Key Technologies
