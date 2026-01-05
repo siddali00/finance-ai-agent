@@ -79,28 +79,23 @@ const ChatWindow = () => {
     setIsLoading(true);
 
     try {
-      // Check if it's a visualization request
-      const isVisualizationRequest = 
-        inputValue.toLowerCase().includes('chart') ||
-        inputValue.toLowerCase().includes('graph') ||
-        inputValue.toLowerCase().includes('visualize') ||
-        inputValue.toLowerCase().includes('plot') ||
-        inputValue.toLowerCase().includes('show me');
-
-      let response;
-      if (isVisualizationRequest) {
-        response = await apiService.visualize(inputValue);
+      // Always call query endpoint - AI will classify and handle visualization requests
+      const response = await apiService.query(inputValue);
+      
+      // Check if response contains chart data (visualization)
+      if (response.data && response.data.is_visualization && response.data.chart_data) {
+        // It's a visualization - render chart
         const aiMessage = {
           id: Date.now(),
           type: 'chart',
-          text: response.description,
-          chartData: response.chart_data,
-          description: response.description,
+          text: response.answer,
+          chartData: response.data.chart_data,
+          description: response.answer,
           isUser: false,
         };
         setMessages(prev => [...prev, aiMessage]);
       } else {
-        response = await apiService.query(inputValue);
+        // It's a text response
         const aiMessage = {
           id: Date.now(),
           type: 'text',

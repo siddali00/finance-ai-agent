@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from app.models.schemas import QueryRequest, QueryResponse
-from app.services.shared import db_session_manager, get_gemini_service
+from app.services.shared import db_session_manager, get_gemini_service, chart_generator
 from app.database import get_db
 from sqlalchemy.orm import Session
 
@@ -93,6 +93,47 @@ async def query_data(request: QueryRequest, db: Session = Depends(get_db)):
                 answer=answer,
                 query_used=None,
                 data=None
+            )
+        
+        elif query_type == 'visualization':
+            # Handle visualization requests - generate chart
+            # Generate chart code
+            code = gemini_service.generate_chart_code(
+                request=request.question,
+                schema_info=schema_info
+            )
+            
+            # Execute code and get chart JSON
+            chart_data = chart_generator.execute_chart_code(
+                code=code,
+                dataframes=session.dataframes
+            )
+            
+            # Determine chart type
+            chart_type = chart_generator.get_chart_type(chart_data)
+            
+            # Generate description
+            description = f"Visualization showing: {request.question}"
+            
+            # Save conversation
+            db_session_manager.save_conversation(
+                db=db,
+                session_id=session_id,
+                question=request.question,
+                answer=description,
+                query_used=code
+            )
+            
+            # Return response with chart data in the data field
+            return QueryResponse(
+                session_id=session_id,
+                answer=description,
+                query_used=None,  # Don't send code to frontend
+                data={
+                    "chart_type": chart_type,
+                    "chart_data": chart_data,
+                    "is_visualization": True
+                }
             )
         
         elif query_type == 'data_query':
